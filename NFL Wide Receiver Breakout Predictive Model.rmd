@@ -1,0 +1,38 @@
+---
+title: "NFL Wide Receiver Breakout Predictive Model"
+author: "Christian Thieme & Chris Dalton"
+date: "8/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r message=FALSE, warning=FALSE }
+library(tidymodels)
+library(readr)
+library(glmnet)
+library(ranger)
+library(vip)
+library(tidyverse)
+library(caret)
+library(imputeTS)
+library(janitor)
+library(tidyr)
+```
+
+```{r message=FALSE, warning=FALSE}
+fb <- 
+  readr::read_csv("C:/Users/Chris/OneDrive/Personal R Projects/FantasyFootballModel/football4.csv") %>% 
+  mutate_if(is.character, as.factor) #, 
+        # BreakoutAge_WRBOA_twentypercent = as.factor(BreakoutAge_WRBOA_twentypercent),
+        # BreakoutAge_WRBOA_thirtypercent = as.factor(BreakoutAge_WRBOA_thirtypercent)
+
+rookies <- readr::read_csv("C:/Users/Chris/OneDrive/Personal R Projects/FantasyFootballModel/WR_Rookies.csv") %>% 
+  mutate_if(is.character, as.factor)
+         
+dim(fb)
+dim(rookies)
+```
