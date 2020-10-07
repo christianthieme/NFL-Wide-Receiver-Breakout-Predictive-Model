@@ -1,0 +1,484 @@
+---
+title: "Fantasy Football"
+author: "Christian Thieme"
+date: "5/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fantasy Football Model
+
+```{r message=FALSE, warning=FALSE}
+library(tidymodels)
+library(readr)
+library(glmnet)
+library(ranger)
+library(vip)
+library(tidyverse)
+library(caret)
+library(imputeTS)
+library(janitor)
+library(tidyr)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+fb <- 
+  readr::read_csv("C:/Users/Chris/OneDrive/Personal R Projects/FantasyFootballModel/football4.csv") %>% 
+  mutate_if(is.character, as.factor) #, 
+        # BreakoutAge_WRBOA_twentypercent = as.factor(BreakoutAge_WRBOA_twentypercent),
+        # BreakoutAge_WRBOA_thirtypercent = as.factor(BreakoutAge_WRBOA_thirtypercent)
+         
+dim(fb)
+```
+
+
+
+```{r}
+ffb <- fb %>% 
+  select('Player','Team', 'DraftYear','School', 'Conference', 'DR', 'DP', 'DraftAge',  'BreakoutAge_WRBOA_twentypercent','BreakoutAge_WRBOA_thirtypercent','TotalCareer_REC', 'GamesPlayed_18','GamesPlayed_19','GamesPlayed_20', 'GamesPlayed_21', 'GamesPlayed_22',  "RushATTs_18" ,                         
+ "RushATTs_19",                           "RushATTs_20" ,                         "RushATTs_21",                          
+  "RushATTs_22"  ,                         "RushATTs_23"  ,                         "RushYards_18" ,                        
+  "RushYards_19" ,                         "RushYards_20" ,                         "RushYards_21",                         
+  "RushYards_22"  ,                        "RushYards_23"  ,                        "RushTDs_18"   ,                        
+  "RushTDs_19"     ,                       "RushTDs_20"     ,                       "RushTDs_21"    ,                       
+  "RushTDs_22"      ,                      "RushTDs_23"      ,                      "MSRushATTs_18"  ,                      
+  "MSRushATTs_19"    ,                     "MSRushATTs_20"    ,                     "MSRushATTs_21"   ,                     
+  "MSRushATTs_22"     ,                    "MSRushATTs_23"     ,                    "MSRushYards_18"   ,                    
+  "MSRushYards_19"     ,                   "MSRushYards_20"     ,                   "MSRushYards_21"    ,                   
+  "MSRushYards_22"      ,                  "MSRushYards_23"      ,                  "MSRushTDs_18"       ,                  
+  "MSRushTDs_19"         ,                 "MSRushTDs_20"         ,                 "MSRushTDs_21"        ,                 
+  "MSRushTDs_22"          ,                "MSRushTDs_23"          ,                "CombinedRUSHMS_18"    ,                
+  "CombinedRUSHMS_19"      ,               "CombinedRUSHMS_20"      ,               "CombinedRUSHMS_21"     ,               
+  "CombinedRUSHMS_22"       ,              "CombinedRUSHMS_23"       ,              "Yards_Carry_18"         ,              
+  "Yards_Carry_19"           ,             "Yards_Carry_20"           ,             "Yards_Carry_21"          ,             
+  "Yards_Carry_22"            ,            "Yards_Carry_23"            ,            "Yards_TMRushAttempt_18"   ,            
+  "Yards_TMRushAttempt_19"     ,           "Yards_TMRushAttempt_20"     ,           "Yards_TMRushAttempt_21"    ,           
+  "Yards_TMRushAttempt_22"      ,          "Yards_TMRushAttempt_23"      ,          "TDs_TMRushAttempt_18"       ,          
+  "TDs_TMRushAttempt_19"         ,         "TDs_TMRushAttempt_20"         ,         "TDs_TMRushAttempt_21"        ,         
+  "TDs_TMRushAttempt_22"          ,        "TDs_TMRushAttempt_23"          ,        "Receptions_18"                ,        
+  "Receptions_19"                  ,       "Receptions_20"                  ,       "Receptions_21"                 ,       
+  "Receptions_22"  ,                       "Receptions_23"                   ,      "ReceivingYards_18"              ,      
+  "ReceivingYards_19",                     "ReceivingYards_20"                ,     "ReceivingYards_21" ,                   
+  "ReceivingYards_22" ,                    "ReceivingYards_23"                 ,    "ReceivingTDs_18"    ,                  
+  "ReceivingTDs_19"    ,                   "ReceivingTDs_20"                    ,   "ReceivingTDs_21"     ,                 
+  "ReceivingTDs_22"     ,                  "ReceivingTDs_23" ,                      "MSReceptions_18"      ,                
+ "MSReceptions_19"       ,                "MSReceptions_20"   ,                    "MSReceptions_21"        ,              
+  "MSReceptions_22"       ,                "MSReceptions_23"   ,                    "MSReceivingYards_18"    ,              
+ "MSReceivingYards_19"     ,              "MSReceivingYards_20" ,                  "MSReceivingYards_21"      ,            
+ "MSReceivingYards_22"      ,             "MSReceivingYards_23"  ,                 "MSReceivingTDs_18"         ,           
+ "MSReceivingTDs_19"         ,            "MSReceivingTDs_20"     ,                "MSReceivingTDs_21"          ,          
+ "MSReceivingTDs_22"          ,           "MSReceivingTDs_23"      ,               "CombinedRECMS_18"            ,         
+ "CombinedRECMS_19"            ,          "CombinedRECMS_20"        ,              "CombinedRECMS_21"             ,        
+ "CombinedRECMS_22"             ,         "CombinedRECMS_23"         ,             "TotalCombinedMS_18"            ,       
+ "TotalCombinedMS_19"            ,        "TotalCombinedMS_20"        ,            "TotalCombinedMS_21"             ,      
+ "TotalCombinedMS_22"             ,       "TotalCombinedMS_23"         ,           "Yards_Reception_18"              ,     
+ "Yards_Reception_19"              ,      "Yards_Reception_20"          ,          "Yards_Reception_21"               ,    
+"Yards_Reception_22"                ,    "Yards_Reception_23"            ,        "Yards_ReceptionOverTMAverage_18"    ,  
+ "Yards_ReceptionOverTMAverage_19"   ,    "Yards_ReceptionOverTMAverage_20" ,      "Yards_ReceptionOverTMAverage_21"  ,
+  "Touches_18",  "Touches_19" ,                           "Touches_20" ,                           "Touches_21"    ,                       
+ "Touches_22"         ,                   "Touches_23",                            "ScrimmageYards_18"  ,                  
+ "ScrimmageYards_19"  ,                   "ScrimmageYards_20" ,                    "ScrimmageYards_21" ,                   
+ "ScrimmageYards_22"   ,                  "ScrimmageYards_23"  ,                   "ScrimmageTDs_18"    ,                  
+ "ScrimmageTDs_19"      ,                 "ScrimmageTDs_20"     ,                  "ScrimmageTDs_21"     ,                 
+ "ScrimmageTDs_22"       ,                "ScrimmageTDs_23"      ,                 "TouchMS_18"           ,                
+ "TouchMS_19"             ,               "TouchMS_20"            ,                "TouchMS_21"            ,               
+ "TouchMS_22"              ,              "TouchMS_23"             ,               "ScrimmageYardsMS_18"    ,              
+ "ScrimmageYardsMS_19"      ,             "ScrimmageYardsMS_20"     ,              "ScrimmageYardsMS_21"     ,             
+ "ScrimmageYardsMS_22"       ,            "ScrimmageYardsMS_23"      ,             "ScrimmageTDsMS_18"        ,            
+ "ScrimmageTDsMS_19"          ,           "ScrimmageTDsMS_20"         ,            "ScrimmageTDsMS_21"         ,           
+ "ScrimmageTDsMS_22"           ,          "ScrimmageTDsMS_23"          ,           "CombineSCRIMMS_18"          ,          
+ "CombineSCRIMMS_19"            ,         "CombineSCRIMMS_20"           ,          "CombineSCRIMMS_21"           ,         
+ "CombineSCRIMMS_22"             ,        "CombineSCRIMMS_23"            ,         "ScrimmageYards_Touch_18"      ,        
+ "ScrimmageYards_Touch_19"        ,       "ScrimmageYards_Touch_20"       ,        "ScrimmageYards_Touch_21"       ,       
+ "ScrimmageYards_Touch_22"         ,      "ScrimmageYards_Touch_23"        ,       "ScrimYards_TouchOverTMAVG_18"   ,      
+ "ScrimYards_TouchOverTMAVG_19"     ,     "ScrimYards_TouchOverTMAVG_20"    ,      "ScrimYards_TouchOverTMAVG_21"    ,     
+ "ScrimYards_TouchOverTMAVG_22"      ,    "ScrimYards_TouchOverTMAVG_23"     ,     "Touch_Play_18"                    ,    
+ "Touch_Play_19"    ,                     "Touch_Play_20"                      ,   "Touch_Play_21"                     ,   
+ "Touch_Play_22"     ,                    "Touch_Play_23"   ,                      "ScrimmageYards_Play_18"             ,  
+"ScrimmageYards_Play_19",                "ScrimmageYards_Play_20" ,               "ScrimmageYards_Play_21"               ,
+ "ScrimmageYards_Play_22" ,               "ScrimmageYards_Play_23" ,               "ScrimmageTDs_Play_18"                 ,
+ "ScrimmageTDs_Play_19"    ,              "ScrimmageTDs_Play_20"    ,              "ScrimmageTDs_Play_21"                 ,
+ "ScrimmageTDs_Play_22"     ,             "ScrimmageTDs_Play_23"     ,             "PPRFantasyPoints_18"                  ,
+ "PPRFantasyPoints_19"       ,            "PPRFantasyPoints_20"       ,            "PPRFantasyPoints_21"                  ,
+ "PPRFantasyPoints_22"        ,           "PPRFantasyPoints_23",
+ "TotalTouches_19"             ,          "TotalTouches_20"     ,                  "TotalTouches_21" ,                     
+ "TotalTouches_22"              ,         "TotalTouches_23"      ,                 "TotalYards_18"    ,                    
+ "TotalYards_19"                 ,        "TotalYards_20"         ,                "TotalYards_21"     ,                   
+ "TotalYards_22"                  ,       "TotalYards_23"          ,               "TotalTDs_18"        ,                  
+ "TotalTDs_19"                     ,      "TotalTDs_20"             ,              "TotalTDs_21"         ,                 
+ "TotalTDs_22"                      ,     "TotalTDs_23" ,
+"Combine_Height" ,                       "Combine_Weight"  ,                      "Combine_HandSize" ,                    
+ "Combine_ArmLength"    ,                 "Combine_40time"   ,                     "Combine_Bench"  ,                      
+ "Combine_Vertical",                      "Combine_Broad"    ,                     "Combine_Shuttle"  ,                    
+ "Combine_3Cone",
+ "Yards_ReceptionOverTMAverage_22"    ,   "Yards_ReceptionOverTMAverage_23"       ,'TotalCareer_REC_GP', 'TotalCareer_RECYards', 'TotalCareer_RECYards_GP', 'TotalCareer_RECTDs', 'TotalCareer_RECTDs_GP', 'TotalCareer_Yards_REC', 'TotalCareer_Touches', 'TotalCareer_Touches_GP', 'TotalCareer_PPRPoints', 'TotalCareer_PPR_GP', 'TotalCareer_PPR_Touch', 'TotalCareer_TotalTouches_GP', 'TotalCareer_TotalYards', 'TotalCareer_TotalYards_GP', 'TotalCareer_TotalTDs', 'TotalCareer_TotalTDs_GP', 'CareerBest_REC', 'CareerBest_RECs_GP', 'CareerBest_RECYards', 'CareerBest_RECYards_GP', 'CareerBest_RECTDs', 'CareerBest_RECTDs_GP', 'CareerBest_RECMS', 'CareerBest_RECYardsMS', 'CareerBest_RECTDsMS', 'CareerBest_CombinedRECMS', 'CareerBest_TotalMS', 'CareerBest_Yards_REC', 'CareerBest_YDs_RECOverTMAVG', 'CareerBest_REC_TMPA', 'CareerBest_RECYards_TMPA', 'CareerBest_RECTDS_TMPA', 'CareerBest_Touches', 'CareerBest_Touches_GP', 'CareerBest_SCRIMYards', 'CareerBest_SCRIMYards_GP', 'CareerBest_SCRIMTDs', 'CareerBest_SCRIMTDs_GP', 'CareerBest_TouchMS', 'CareerBest_SCRIMYardsMS', 'CareerBest_SCRIMTDsMS', 'CareerBest_COMBSCRIMMS',  'CareerBest_SCRIMYards_Touch',  'CareerBest_SCRIMYDs_TouchOverTMAVG', 'CareerBest_Touch_Play', 'CareerBest_SCRIMYards_Play', 'CareerBest_SCRIMTDs_Play', 'CareerBest_PPRPoints', 'CareerBest_PPR_GP', 'CareerBest_PPR_Touch', 'CareerBest_TotalTouches',  'CareerBest_TotalTouches_GP', 'CareerBest_TotalYards', 'CareerBest_TotalYards_GP', 'CareerBest_TotalTDs',  'CareerBest_TotalTDs_GP', 'CareerLast_RECs_GP', 'CareerLast_RECYards', 'CareerLast_RECYards_GP', 'CareerLast_RECTDs', 'CareerLast_RECTDs_GP', 'CareerLast_RECMS', 'CareerLast_RECYardsMS',                 'CareerLast_RECTDsMS', 'CareerLast_CombinedRECMS', 'CareerLast_TotalMS', 'CareerLast_Yards_REC', 'CareerLast_YDs_RECOverTMAVG', 'CareerLast_REC_TMPA',             'CareerLast_RECYards_TMPA', 'CareerLast_RECTDS_TMPA', 'CareerLast_Touches', 'CareerLast_Touches_GP', 'CareerLast_SCRIMYards', 'CareerLast_SCRIMYards_GP',                 'CareerLast_SCRIMTDs', 'CareerLast_TotalTouches_GP', 'CareerLast_TotalYards', 'CareerLast_TotalYards_GP', 'CareerLast_TotalTDs', 'CareerAverage_RECYards',             'CareerAverage_RECYards_GP', 'CareerAverage_RECTDs', 'CareerAverage_RECTDs_GP', 'CareerAverage_RECMS', 'CareerAverage_RECYardsMS', 'CareerAverage_RECTDsMS',            'CareerAverage_CombinedRECMS', 'CareerAverage_TotalMS', 'CareerAverage_Yards_REC', 'CareerAverage_YDs_RECOverTMAVG', 'CareerAverage_REC_TMPA', 
+'CareerAverage_RECYards_TMPA', 'CareerAverage_RECTDS_TMPA', 'CareerAverage_Touches', 'CareerAverage_Touches_GP', 'CareerAverage_SCRIMYards',      'CareerAverage_SCRIMYards_GP','CareerAverage_SCRIMTDs', 'CareerAverage_SCRIMTDs_GP', 'CareerAverage_TouchMS', 'CareerAverage_SCRIMYardsMS', 'CareerAverage_SCRIMTDsMS',  'CareerAverage_COMBSCRIMMS', 'CareerAverage_SCRIMYards_Touch', 'CareerAverage_SCRIMYDs_TouchOverTMAVG', 'CareerAverage_Touch_Play', 'CareerAverage_SCRIMYards_Play',
+'CareerAverage_SCRIMTDs_Play', 'CareerAverage_PPRPoints', 'CareerAverage_PPR_GP', 'CareerAverage_PPR_Touch', 'CareerAverage_TotalTouches', 'CareerAverage_TotalTouches_GP', 'CareerAverage_TotalYards', 'CareerAverage_TotalYards_GP', 'CareerAverage_TotalTDs', 'CareerAverage_TotalTDs_GP', 'CollegeDominator_RECCD', 'CollegeDominator_SCRIMCD', 'Combine_BMI', 'Combine_Height', 'Combine_Weight', 'Combine_HaSS', 'B_O', 'PPG') %>% 
+  janitor::clean_names()
+
+```
+
+
+```{r}
+ffb <- ffb %>% mutate(
+  Team_Next_Year = paste(team, draft_year, sep = '-')
+  ) 
+
+```
+
+
+```{r}
+opp <- readr::read_csv("C:/Users/Chris/OneDrive/Personal R Projects/FantasyFootballModel/WReceiverOpp.csv") %>%
+  select(Team_Next_Year, Opportunity)
+opp
+```
+
+```{r}
+ffb <- ffb %>% left_join(opp, by = "Team_Next_Year")
+```
+
+
+```{r}
+ffb <- ffb %>%   
+ filter(dr != 10) %>%
+  filter(ppg != 0) %>% 
+  filter(!is.na(ppg))
+```
+
+
+```{r}
+glimpse(ffb)
+```
+
+
+```{r}
+ffb <- ffb %>% 
+  mutate(
+   # combine_ha_ss = replace_na(combine_ha_ss, median(combine_ha_ss, na.rm = TRUE)),
+    combine_vertical = as.numeric(combine_vertical)
+   # breakout_age_wrboa_twentypercent = replace_na(breakout_age_wrboa_twentypercent, 30 ),
+  #  breakout_age_wrboa_thirtypercent = replace_na(breakout_age_wrboa_thirtypercent, 30 ),
+   # games_played_18 = replace_na(games_played_18, 0),
+  #  games_played_19 = replace_na(games_played_19, 0), 
+  #  games_played_20 = replace_na(games_played_20, 0),
+  #  games_played_21 = replace_na(games_played_21, 0),
+  #  games_played_22 = replace_na(games_played_22, 0), 
+  #  receptions_20 = replace_na(receptions_20, 0), 
+  #  receiving_yards_20 = replace_na(receiving_yards_20, 0), 
+  #  ms_receptions_20 = replace_na(ms_receptions_20, 0), 
+  #  ms_receiving_yards_20 = replace_na(ms_receiving_yards_20, 0), 
+  #  combined_recms_20 = replace_na(combined_recms_20, 0), 
+  #  total_combined_ms_20 = replace_na(total_combined_ms_20, 0), 
+  # yards_reception_20 = replace_na(yards_reception_20, 0), 
+  #  yards_reception_over_tm_average_20 = replace_na(yards_reception_over_tm_average_20, 0), 
+  #  rec_tm_pass_attempts_20 = replace_na(rec_tm_pass_attempts_20, 0), 
+  #  yards_tm_pass_attempts_20 = replace_na(yards_tm_pass_attempts_20, 0), 
+  #  touches_20 = replace_na(touches_20,0), 
+  #  scrimmage_yards_20 = replace_na(scrimmage_yards_20, 0), 
+  #  scrimmage_yards_play_20 = replace_na(scrimmage_yards_play_20, 0), 
+   # total_touches_20 = replace_na(total_touches_20, 0), 
+   # total_yards_20 = replace_na(total_yards_20, 0)
+         ) 
+ffb
+```
+
+```{r}
+ffb[is.na(ffb)] <- 0
+ffb
+```
+
+
+```{r}
+ffb <- drop_na(ffb) %>% 
+  filter(team != 'bum')
+dim(ffb)
+```
+
+
+```{r}
+ffb <- ffb %>%
+  mutate(combine_height = ifelse(combine_height == 0, NA, combine_height ), 
+         combine_weight = ifelse(combine_weight == 0, NA, combine_weight),
+         combine_hand_size = ifelse(combine_hand_size == 0, NA, combine_hand_size),
+         combine_arm_length = ifelse(combine_arm_length == 0, NA, combine_arm_length),
+         combine_40time = ifelse(combine_40time == 0, NA, combine_40time), 
+         combine_bench = ifelse(combine_bench == 0, NA, combine_bench), 
+         combine_vertical = ifelse(combine_vertical == 0, NA, combine_vertical), 
+         combine_broad = ifelse(combine_broad == 0, NA, combine_broad), 
+         combine_shuttle = ifelse(combine_shuttle == 0, NA, combine_shuttle), 
+         combine_3cone = ifelse(combine_3cone == 0, NA, combine_3cone),
+         combine_ha_ss = ifelse(combine_ha_ss == 0, NA, combine_ha_ss)
+         )
+
+
+
+
+ #                       combine_hand_size                        combine_arm_length                            combine_40time 
+                                     
+            #                combine_bench                          combine_vertical                             combine_broad 
+                                     
+                   #       combine_shuttle                             combine_3cone
+```
+
+
+```{r}
+cols <-names(ffb)
+col_names <- trimws(cols)
+ # make.names(names(fb1))
+col_names[make.names(cols) != col_names]
+```
+
+
+```{r}
+ffb <- ffb %>% select(-ppg, -team, -draft_year, -Team_Next_Year)
+glimpse(ffb)
+```
+
+
+
+
+```{r}
+ffb %>% select(Opportunity) %>% count(Opportunity)
+```
+
+
+```{r}
+ffb %>%
+  count(b_o) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+set.seed(123)
+
+splits <- initial_split(ffb, strata = b_o, prop = 0.80)
+
+fb_other <- training(splits)
+fb_test <- testing(splits)
+
+fb_other %>%
+  count(b_o) %>%
+  mutate(prop = n/sum(n))
+
+fb_test %>%
+  count(b_o) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+set.seed(234)
+
+val_set <- validation_split(fb_other, 
+                            strata = b_o, 
+                            prop = 0.80)
+
+val_set# $splits[[1]][[1]] %>% select(B_O) %>% count(B_O)
+```
+
+Model: 
+
+```{r}
+cores <- parallel::detectCores()
+cores
+```
+
+
+```{r}
+rf_mod <- 
+  rand_forest(mtry = tune(), 
+              min_n = tune(), 
+              trees = 1500) %>%
+  set_engine("ranger", num.threads = cores) %>%
+  set_mode("classification")
+
+rf_mod
+```
+
+
+
+```{r}
+rf_recipe <- 
+ recipe(b_o ~ ., data = fb_other) %>%
+    update_role(player , new_role = "ID") %>%
+    step_dummy(all_nominal(), -all_outcomes()) %>%
+    step_zv(all_predictors()) %>% #remove all variables with only a single value
+    step_normalize(all_predictors()) %>%
+    step_knnimpute(all_predictors()) %>%
+    step_upsample(b_o, over_ratio = 1.0) 
+
+
+```
+
+
+Create a Workflow:
+
+```{r}
+rf_workflow <- 
+  workflow() %>%
+  add_model(rf_mod) %>%
+  add_recipe(rf_recipe)
+```
+
+Train and Tune the Model
+
+```{r}
+rf_res <- 
+  rf_workflow %>%
+  tune_grid(val_set, 
+    grid = 25, 
+   # split_rule = "gini",
+    control = control_grid(save_pred =TRUE), 
+    metrics = metric_set(roc_auc)
+  )
+
+rf_res
+```
+
+```{r}
+rf_res$.notes
+```
+
+
+```{r}
+rf_res %>% show_best(metric = "roc_auc")
+```
+
+
+```{r}
+rf_res %>% 
+  collect_metrics()
+```
+
+```{r}
+autoplot(rf_res)
+```
+
+```{r}
+rf_best <- 
+  rf_res %>%
+  select_best(metric = "roc_auc")
+
+rf_best
+```
+
+```{r}
+last_rf_mod <- 
+  rand_forest(mtry = 28, min_n = 32, trees = 1500) %>%
+  set_engine("ranger", num.threads = cores, importance = "impurity") %>%
+  set_mode("classification")
+
+last_rf_workflow <- 
+  rf_workflow %>%
+  update_model(last_rf_mod) 
+
+set.seed(345)
+last_rf_fit <- 
+  last_rf_workflow %>%
+  last_fit(splits)
+
+
+last_rf_fit
+```
+
+
+```{r}
+last_rf_fit %>%
+  collect_metrics()
+```
+
+
+```{r}
+last_rf_fit %>% 
+  collect_predictions( ) %>%
+  roc_curve(b_o, `.pred_No Breakout`) %>% 
+  autoplot()
+```
+
+```{r}
+fitted <- last_rf_fit %>% 
+  collect_predictions() 
+```
+
+```{r}
+table(fitted$b_o,fitted$.pred_class)
+```
+
+```{r}
+precision(fitted$b_o,fitted$.pred_class)
+```
+
+```{r}
+fb_test
+```
+
+```{r}
+last_rf_fit %>% 
+  collect_predictions() 
+```
+
+```{r}
+predictions <- last_rf_fit %>% 
+  collect_predictions() %>% 
+  mutate(row_number = row_number())
+predictions
+```
+
+
+```{r}
+final <- fb_test %>% 
+  mutate(row_number = row_number()) %>%
+  select(row_number, player, school, dr, dp, draft_age ) %>% 
+  left_join(predictions, by = "row_number")
+
+final
+```
+
+
+
+```{r}
+updated_final <- final %>% 
+  mutate(updated_b_o = if_else(.pred_Breakout > .35, "Breakout", "No Breakout"))
+updated_final
+```
+
+```{r fig.height=12, fig.width=10}
+ggplot(updated_final) +
+  aes(x = reorder(player, .pred_Breakout), y = .pred_Breakout) + 
+  geom_col() +
+  geom_text(aes(label = round(.pred_Breakout,2), hjust = -.20)) +
+  coord_flip()
+```
+
+
+```{r}
+table(updated_final$b_o,updated_final$updated_b_o)
+```
+
+```{r}
+precision(updated_pred$b_o,as.factor(updated_pred$updated_b_o))
+```
+
+
+```{r}
+fb_test
+```
+
+```{r}
+last_rf_fit %>% 
+  pluck(".workflow", 1) %>%   
+  pull_workflow_fit() %>% 
+  vip(num_features = 30)
+```
+
+```{r}
+ggplot(ffb) + 
+  aes(x = ppg, y = as.factor(Opportunity)) + 
+  geom_boxplot()
+```
+
+
+

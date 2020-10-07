@@ -1,0 +1,331 @@
+---
+title: "Fantasy Football"
+author: "Christian Thieme"
+date: "5/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fantasy Football Model
+
+```{r message=FALSE, warning=FALSE}
+library(tidymodels)
+library(readr)
+library(glmnet)
+library(ranger)
+library(vip)
+library(tidyverse)
+library(caret)
+library(imputeTS)
+library(janitor)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+fb <- 
+  readr::read_csv("C:/Users/Chris/OneDrive/Personal R Projects/FantasyFootballModel/football2.csv") %>% 
+  mutate_if(is.character, as.factor) %>%
+  mutate(Combine_Vertical = as.numeric(Combine_Vertical))
+  
+
+dim(fb)
+```
+
+```{r}
+ffb <- fb %>% select('DR','DP','DraftAge','CareerBest_REC','CareerBest_RECYards','CareerBest_RECMS','CareerBest_RECYardsMS','CareerBest_Yards_REC','CareerBest_YDs_RECOverTMAVG','CareerBest_REC_TMPA','CareerBest_RECYards_TMPA','CareerBest_Touches','CareerBest_Touch_Play','CareerBest_SCRIMYards_Play','CareerBest_SCRIMTDs_Play','CareerBest_PPRPoints','CareerBest_PPR_GP','CareerBest_PPR_Touch','CollegeDominator_RECCD','BreakoutAge_WRBOA_twentypercent','Combine_BMI','Combine_Height','Combine_Weight','Combine_HandSize','Combine_ArmLength','Combine_40time','Combine_Vertical','Combine_3Cone','Combine_HaSS', 'B_O', 'PPG') %>% janitor::clean_names()
+```
+
+```{r}
+colSums(is.na(ffb))
+```
+
+```{r}
+ffb <- ffb %>% filter(!is.na(ppg))
+```
+
+
+```{r}
+ffb <- 
+  ffb %>% 
+  filter(dr < 10) %>%
+  filter(ppg != 0) %>%
+  select(-ppg)
+```
+
+
+```{r}
+ffb %>% count(b_o)
+```
+
+
+```{r}
+colSums(is.na(ffb))
+```
+
+```{r}
+ffb <- imputeTS::na_mean(ffb)
+```
+
+
+```{r}
+colnames(ffb) <- paste("x", colnames(ffb), sep = "_")
+```
+
+
+```{r}
+glimpse(ffb)
+```
+
+```{r}
+ggplot(ffb) + 
+  aes(x = x_dp, y = x_ppg, color = x_b_o) + 
+  geom_point() +
+  labs(title = "draft pick")
+```
+
+Remove draft rount of 10 and anyone with ppg of 0.
+
+```{r}
+ggplot(ffb) + 
+  aes(x = x_dr, y = x_ppg, color = x_b_o) + 
+  geom_point()  +
+  labs(title = "draft round")
+```
+
+```{r}
+ggplot(ffb) + 
+  aes(x = x_draft_age, y = x_ppg, color = x_b_o) + 
+  geom_point()  +
+  labs(title = "draft age")
+```
+
+```{r}
+ggplot(ffb) + 
+  aes(x = x_career_best_rec, y = x_ppg, color = x_b_o) + 
+  geom_point()  +
+  labs(title = "career best rec")
+```
+
+Not a strong relationship here. 
+
+```{r}
+ggplot(ffb) + 
+  aes(x = x_combine_hand_size, y = x_ppg, color = x_b_o) + 
+  geom_point()  +
+  xlim(8,12) +
+  labs(title = "hand size")
+```
+
+```{r}
+cor_fb <- ffb %>% select(-x_b_o) 
+glimpse(cor_fb)
+```
+
+```{r}
+correlation <- round(cor(cor_fb),2)
+```
+
+```{r}
+library(reshape2)
+melted_cor <- melt(correlation)
+head(melted_cor)
+```
+
+```{r fig.height=25, fig.width=25}
+ggplot(data = melted_cor) +
+  aes(x = Var1, y = Var2, fill = value) + 
+  geom_tile() +
+ geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+    size = 12, hjust = 1))
+```
+
+
+```{r}
+cor(ffb$x_ppg, ffb$x_college_dominator_reccd)
+```
+
+
+
+
+
+Dropping WR_Tier
+
+```{r}
+## fb %>% select(-x_wr_tier, -x_player, -x_school, -x_pos)
+```
+
+
+
+```{r}
+cols <-names(ffb)
+col_names <- trimws(cols)
+ # make.names(names(fb1))
+col_names[make.names(cols) != col_names]
+```
+
+
+```{r}
+ffb %>%
+  count(x_b_o) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+set.seed(123)
+
+splits <- initial_split(ffb, strata = x_b_o, prop = 0.80)
+
+fb_other <- training(splits)
+fb_test <- testing(splits)
+
+fb_other %>%
+  count(x_b_o) %>%
+  mutate(prop = n/sum(n))
+
+fb_test %>%
+  count(x_b_o) %>%
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+set.seed(234)
+
+val_set <- validation_split(fb_other, 
+                            strata = x_b_o, 
+                            prop = 0.80)
+
+val_set# $splits[[1]][[1]] %>% select(B_O) %>% count(B_O)
+```
+
+Model: 
+
+```{r}
+cores <- parallel::detectCores()
+cores
+```
+
+
+```{r}
+rf_mod <- 
+  rand_forest(mtry = tune(), 
+              min_n = tune(), 
+              trees = 1000) %>%
+  set_engine("ranger", num.threads = cores) %>%
+  set_mode("classification")
+
+rf_mod
+```
+
+Recipe: Don't need a recipe for RF
+
+```{r}
+#lr_recipe <- 
+ # recipe(B_O ~ ., data = fb_other) %>%
+ #   step_dummy(all_nominal(), -all_outcomes()) %>%
+  #  step_zv(all_predictors()) %>% #remove all variables with only a single value
+  #  step_normalize(all_predictors())
+```
+
+Create a Workflow:
+
+```{r}
+rf_workflow <- 
+  workflow() %>%
+  add_model(rf_mod) %>%
+  add_formula(x_b_o ~ .)
+```
+
+Train and Tune the Model
+
+```{r}
+rf_res <- 
+  rf_workflow %>%
+  tune_grid(val_set, 
+    grid = 25, 
+   # split_rule = "gini",
+    control = control_grid(save_pred =TRUE), 
+    metrics = metric_set(roc_auc)
+  )
+
+rf_res
+```
+
+```{r}
+rf_res$.notes
+```
+
+
+```{r}
+rf_res %>% show_best(metric = "roc_auc")
+```
+
+
+```{r}
+rf_res %>% 
+  collect_metrics()
+```
+
+```{r}
+autoplot(rf_res)
+```
+
+```{r}
+rf_best <- 
+  rf_res %>%
+  select_best(metric = "roc_auc")
+
+rf_best
+```
+
+```{r}
+last_rf_mod <- 
+  rand_forest(mtry = 3, min_n = 3, trees = 1500) %>%
+  set_engine("ranger", num.threads = cores) %>%
+  set_mode("classification")
+
+last_rf_workflow <- 
+  rf_workflow %>%
+  update_model(last_rf_mod) 
+
+set.seed(345)
+last_rf_fit <- 
+  last_rf_workflow %>%
+  last_fit(splits)
+
+last_rf_fit
+```
+
+```{r}
+last_rf_fit %>%
+  collect_metrics()
+```
+
+```{r}
+fb_test %>% 
+  recall(truth = x_b_o, .predictions)
+```
+
+```{r}
+last_rf_fit %>% 
+  collect_predictions( ) %>%
+  roc_curve(x_b_o, `.pred_No Breakout`) %>% 
+  autoplot()
+```
+
+```{r}
+fitted <- last_rf_fit %>% 
+  collect_predictions() 
+```
+
+```{r}
+table(fitted$x_b_o,fitted$.pred_class)
+```
+
+```{r}
+recall(fitted$x_b_o,fitted$.pred_class)
+```
+
