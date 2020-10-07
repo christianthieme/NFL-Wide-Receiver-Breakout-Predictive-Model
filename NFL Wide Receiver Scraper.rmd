@@ -1,0 +1,222 @@
+---
+title: "NFL WR Historical Stats"
+author: "Christian Thieme"
+date: "7/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## NFL WR Historical Stats
+
+```{r message=FALSE, warning=FALSE}
+library(rvest)
+library(xml2)
+library(tidyverse)
+```
+
+```{r}
+
+url <- xml2::read_html("https://www.pro-football-reference.com/teams/cle/2018.htm#rushing_and_receiving")
+
+data <- url %>% 
+ # html_nodes('body') %>%
+ # html_nodes('*[id="content"]') %>%
+  html_nodes('*[id="all_rushing_and_receiving"]') %>%
+  html_nodes(xpath = 'comment()') %>%
+  html_text() %>% 
+  read_html() %>%
+  html_node('table') %>%
+  html_table()
+ # html_nodes('.per_match_toggle sortable stats_table now_sortable')
+
+data
+```
+
+```{r}
+names(data) <- c("No.", "Player", "Age", "Pos", "Games_G", "Games_GS", "Rushing_Att", "Rushing_Yds", "Rushing_TD", "Rushing_Lng", "Rushing_YA", "Rushing_YG",  "Rushing_AG", "Receiving_Tgt", "Receiving_Rec", "Receiving_Yds", "Receiving_YR","Receiving_TD", "Receiving_Lng", "Receiving_RG", "Receiving_YG", "Receiving_Ctch", "Receiving_Y_Tgt", "Total_Yds_Touch", "Total_Yds_Y_Tch", "Total_Yds_Y_Scm", "RRTD", "Fmb") 
+```
+
+```{r}
+data <- data[c(2:length(data)),]
+data
+```
+
+
+```{r}
+wide_receiver <-  data %>% 
+  dplyr::filter(Pos == 'WR') %>% 
+  dplyr::select(Player, Pos, Receiving_Rec, Receiving_Yds) %>% 
+  dplyr::arrange(desc(Receiving_Yds)) %>%
+  dplyr::top_n(1) %>%
+  mutate(
+    Receiving_Yds = as.numeric(Receiving_Yds),
+    Opportunity = ifelse(Receiving_Yds >= 1400, 1, 
+                         ifelse(Receiving_Yds >= 1200, 2, 
+                            ifelse(Receiving_Yds >= 1000, 3, 
+                                   ifelse(Receiving_Yds >= 800, 4,
+                                          5))))) 
+  
+  
+wide_receiver
+```
+
+```{r}
+scraper_func <- function(base_url, team, year, ending) {
+  
+  build_url <- paste0(base_url, team, "/", year, ending)
+  
+  url <- xml2::read_html(build_url)
+  
+  data <- url %>% 
+  html_nodes('*[id="all_rushing_and_receiving"]') %>%
+  html_nodes(xpath = 'comment()') %>%
+  html_text() %>% 
+  read_html() %>%
+  html_node('table') %>%
+  html_table()
+  
+  names(data) <- c("No.", "Player", "Age", "Pos", "Games_G", "Games_GS", "Rushing_Att", "Rushing_Yds", "Rushing_TD", "Rushing_Lng", "Rushing_YA", "Rushing_YG",  "Rushing_AG", "Receiving_Tgt", "Receiving_Rec", "Receiving_Yds", "Receiving_YR","Receiving_TD", "Receiving_Lng", "Receiving_RG", "Receiving_YG", "Receiving_Ctch", "Receiving_Y_Tgt", "Total_Yds_Touch", "Total_Yds_Y_Tch", "Total_Yds_Y_Scm", "RRTD", "Fmb") 
+  
+  data <- data[c(2:length(data)),]
+
+  wide_receiver <-  data %>% 
+  dplyr::filter(Player != 'Team Total') %>%
+  dplyr::filter(Player != 'Opp Total') %>%
+  #dplyr::filter(Pos %in% c('WR', 'wr', 'TE')) %>% 
+  dplyr::select(Player, Pos, Receiving_Rec, Receiving_Yds) %>% 
+  dplyr::arrange(desc(as.numeric(Receiving_Yds))) %>%
+  dplyr::top_n(1, wt = as.numeric(Receiving_Yds)) %>%
+  mutate(
+    Receiving_Yds = as.numeric(Receiving_Yds),
+    Opportunity = ifelse(Receiving_Yds >= 1465, 1, 
+                         ifelse(Receiving_Yds >= 1240, 2, 
+                            ifelse(Receiving_Yds >= 929, 3, 
+                                   ifelse(Receiving_Yds >= 657, 4,
+                                          5))))) %>%
+  mutate(
+    Team = team, 
+    Year = year, 
+    Next_Year = as.numeric(year) + 1,
+    Team_Next_Year = paste(team, Next_Year, sep = "-")
+     ) 
+  
+  return(wide_receiver)
+  
+}
+```
+
+
+```{r}
+ggplot()
+```
+
+
+```{r}
+scraper_func("https://www.pro-football-reference.com/teams/", "cle", "2017", ".htm#rushing_and_receiving")
+```
+
+```{r}
+pickle <- scraper_func("https://www.pro-football-reference.com/teams/", "cle", "2017", ".htm#rushing_and_receiving")
+```
+
+
+```{r}
+wr_df <- data.frame()
+```
+
+```{r}
+wr_df <- rbind(wr_df, pickle)
+wr_df
+```
+
+
+```{r}
+wr_df <- data.frame()
+
+teams <- c('crd', 'atl','rav', 'buf','car', 'chi', 'cin', 'cle', 'dal', 'den', 'det', 'gnb', 'htx', 'clt', 'jax', 'kan', 'sdg', 'ram', 'mia', 'min', 'nwe', 'nor', 'nyg', 'nyj', 'rai', 'phi', 'pit', 'sfo', 'sea', 'tam', 'oti', 'was')
+years <- seq(2002,2019)
+
+
+for (team in teams){
+  for (year in years){
+    receiver <- scraper_func("https://www.pro-football-reference.com/teams/", team, year, ".htm#rushing_and_receiving")
+    wr_df <- rbind(wr_df, receiver)
+  }
+}
+
+wr_df
+```
+
+```{r}
+ggplot(wr_df) + 
+  aes(x = Receiving_Yds) + 
+  geom_histogram(bins = 200) + 
+  geom_vline(xintercept = 1465) + 
+  geom_vline(xintercept = 1240) + 
+  geom_vline(xintercept = 929) + 
+  geom_vline(xintercept = 657)
+```
+
+
+```{r}
+readr::write_csv(wr_df, 'C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/WReceiverOpp.csv')
+```
+
+
+```{r}
+build_url <- ("https://www.pro-football-reference.com/teams/sdg/2019.htm#rushing_and_receiving")
+
+ url <- xml2::read_html(build_url)
+  
+  data <- url %>% 
+  html_nodes('*[id="all_rushing_and_receiving"]') %>%
+  html_nodes(xpath = 'comment()') %>%
+  html_text() %>% 
+  read_html() %>%
+  html_node('table') %>%
+  html_table()
+  
+  names(data) <- c("No.", "Player", "Age", "Pos", "Games_G", "Games_GS", "Rushing_Att", "Rushing_Yds", "Rushing_TD", "Rushing_Lng", "Rushing_YA", "Rushing_YG",  "Rushing_AG", "Receiving_Tgt", "Receiving_Rec", "Receiving_Yds", "Receiving_YR","Receiving_TD", "Receiving_Lng", "Receiving_RG", "Receiving_YG", "Receiving_Ctch", "Receiving_Y_Tgt", "Total_Yds_Touch", "Total_Yds_Y_Tch", "Total_Yds_Y_Scm", "RRTD", "Fmb") 
+  
+  data <- data[c(2:length(data)),]
+
+  wide_receiver <-  data %>% 
+  dplyr::filter(Pos == 'WR') %>% 
+  dplyr::select(Player, Pos, Receiving_Rec, Receiving_Yds) %>% 
+  dplyr::arrange(desc(as.numeric(Receiving_Yds))) %>%
+  dplyr::top_n(1, wt = as.numeric(Receiving_Yds)) 
+wide_receiver
+```
+
+```{r}
+scraper_func("https://www.pro-football-reference.com/teams/", "rav", 2019, ".htm#rushing_and_receiving")
+```
+
+```{r}
+url <- xml2::read_html("https://www.pro-football-reference.com/teams/rav/2019.htm#rushing_and_receiving")
+  
+  data <- url %>% 
+  html_nodes('*[id="all_rushing_and_receiving"]') %>%
+  html_nodes(xpath = 'comment()') %>%
+  html_text() %>% 
+  read_html() %>%
+  html_node('table') %>%
+  html_table()
+  
+  names(data) <- c("No.", "Player", "Age", "Pos", "Games_G", "Games_GS", "Rushing_Att", "Rushing_Yds", "Rushing_TD", "Rushing_Lng", "Rushing_YA", "Rushing_YG",  "Rushing_AG", "Receiving_Tgt", "Receiving_Rec", "Receiving_Yds", "Receiving_YR","Receiving_TD", "Receiving_Lng", "Receiving_RG", "Receiving_YG", "Receiving_Ctch", "Receiving_Y_Tgt", "Total_Yds_Touch", "Total_Yds_Y_Tch", "Total_Yds_Y_Scm", "RRTD", "Fmb") 
+  
+  data <- data[c(2:length(data)),]
+
+  wide_receiver <-  data %>% 
+  dplyr::filter(Player != 'Team Total') %>%
+  dplyr::filter(Player != 'Opp Total') %>%
+  #dplyr::filter(Pos %in% c('WR', 'wr', 'TE')) %>% 
+  dplyr::select(Player, Pos, Receiving_Rec, Receiving_Yds) %>% 
+  dplyr::arrange(desc(as.numeric(Receiving_Yds))) 
+  
+wide_receiver
+```
+

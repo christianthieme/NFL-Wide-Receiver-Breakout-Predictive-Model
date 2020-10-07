@@ -1,19 +1,32 @@
 ---
-title: "NFL Wide Receiver Breakout Predictive Model"
-author: "Christian Thieme & Chris Dalton"
-date: "8/14/2020"
-output: html_document
+title: "NFL Wide Receiver Breakout Machine Learning Model"
+author: "Chris Dalton & Christian Thieme"
+date: "10/04/2020"
+output:
+  rmarkdown::html_document:
+    theme: "readable"
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Introduction - Chris Dalton
+# Introduction 
 
-Our motivations, our purpose, etc
+Throughout the last 15 years I’ve been involved in fantasy football, I have seen various strategies employed to try and predict which players will be successful in the upcoming season. Success is typically measured by how many fantasy points (driven off real statistics) that a player scores. As my focus in fantasy football has shifted away from redraft (draft a new team each year) and more towards dynasty leagues (keep players year after year), these strategies have become more focused on incoming rookies into the NFL. In dynasty leagues, the two ways to improve your team are through trades, and through the annual rookie draft. 
 
-```{r message=FALSE, warning=FALSE }
+With some extra time during the Covid-19 “pandemic” and with inspiration from the ever-growing dynasty analytics community, it seemed like the perfect time to try and utilize a more numbers-based approach to finding successful rookies prior to my upcoming drafts.
+
+The dynasty analytics community is growing rapidly and there are a number of great resources actively presenting advanced stats/metrics pertaining to fantasy football. Data modeling and analytics in Python, R, and other statistical languages has increased dramatically over the past few years. I recently discovered a few different “models” that attempt to predict player success and specifically some that just analyze incoming rookies across the various positions. After reviewing several models, my interest being piqued, I decided to reach out to one of my data scientist friends, [Christian Thieme](https://www.linkedin.com/in/christian-thieme/), to try and help me build a "rookie wide receiver (WR) breakout model" of my own. 
+
+The goal was to build a model that would help predict rookie success to be used in my upcoming rookie drafts. For our purposes, success would be defined by players who would clear a certain threshold of average points (10 points per game) within their first three years in the NFL. At the end of a season, there will likely always be a large number of receivers that score meaningful fantasy points any given week. However, based on historical averages for my league, an average of 10 points per game is the baseline for players that will truly add value and help your team win each week.
+
+In my longest running league, 57 of 213 (26.8%) receivers averaged 10 points or more per game. This league also has 16 teams with a minimum starting WR requirement of 3. So on any given week, there will be a minimum of 48 different receivers started, but often more. Having as many of those top 50 or so receivers as possible can give your team a significant advantage not only in scoring, but in roster flexibility when things like bye weeks (bye week = each NFL team takes one week off per season) and injuries hit. Roster flexibility is key, as it can also lead to more beneficial trades when other teams are needing additional players and you have a surplus. These are the main reasons why both wide receivers, and the 10 point per game average were chosen for the model.
+
+In order to have the model most accurately aid with predictions, it must first be trained properly. This is where historical data and proper methods are key. Fortunately, there was a player database readily available that contained plenty of relevant information to analyze and train the model. 
+
+```{r message=FALSE, warning=FALSE, echo = FALSE, include= FALSE}
 library(tidymodels)
 library(readr)
 library(glmnet)
@@ -30,20 +43,22 @@ library(tidyverse)
 ```
 
 
+## The Data 
+
+There are a few people in the fantasy football data arena that have spent a lot of time and effort aggregating historical college and NFL statistics. For the purpose of this project, we utilized a database maintained by Dave Wright (@ff_spaceman on Twitter).I believe he has worked with Peter Howard (@pahowdy) to build out the historical database. He has this available to use free of charge, [here](https://docs.google.com/spreadsheets/d/1uVcLovsFMHJvHVqqFAGTW2hTBuiCMI5qHE7RlxOkntk/edit#gid=279165759); which was very much helpful and appreciated. 
+
+Within this database, there are several different tabs for QBs, WRs, RBs, etc. In each tab, there are roughly 600 columns worth of data containing everything from player names, school, college conference, draft info, college production/metrics, athletic testing, and even NFL production for their first three years. As you can imagine, that’s quite a lot of data. However, even though there were a significant number of player statistics to sort through, a significant portion of these columns contained incomplete data, which became a significant hurdle in the analysis and model building process. For example, you may have certain metrics populated for some players, but not all. A specific example might be something like the 40 yard dash event performed by the majority of rookies at the NFL Scouting Combine. 
+
+Every year, there are players that boost or tank their draft stock by running the 40 yard dash. However, each year there are notable players that do not run. Whether they are hurt, elect not to run out of concerns for a slow time that may hurt their draft stock, or wait to run at their pro days etc. This, even in the context of "real football", is hotly debated as to it’s significance for actual NFL production for wide receivers. However, there is no debate that players who perform well are still eligible to be taken early in the draft, while those who perform poorly, seldom if ever, are drafted on day 1. Draft stock is arguably the most important factor in assessing opportunity (more on that later). When players are missing 40 yard dash times, you can only attempt to quantify the impact that it had on their draft stock; and thus their opportunity. The crux of our analysis and model building came down to determining the best way to deal with these missing values. 
 
 
-
-##The Data - Chris Dalton
-
-Where it came from, summary of different types of information, describe the vastness of the data set (give example of dimensions). 
 ```{r message=FALSE, warning=FALSE}
 fb <- 
   readr::read_csv("https://raw.githubusercontent.com/christianthieme/NFL-Wide-Receiver-Breakout-Predictive-Model/master/football4.csv") %>% 
-  mutate_if(is.character, as.factor) #, 
-        # BreakoutAge_WRBOA_twentypercent = as.factor(BreakoutAge_WRBOA_twentypercent),
-        # BreakoutAge_WRBOA_thirtypercent = as.factor(BreakoutAge_WRBOA_thirtypercent)
+  mutate_if(is.character, as.factor)
 
-rookies <- readr::read_csv("https://raw.githubusercontent.com/christianthieme/NFL-Wide-Receiver-Breakout-Predictive-Model/master/WR_Rookies.csv") %>% 
+rookies <- 
+  readr::read_csv("https://raw.githubusercontent.com/christianthieme/NFL-Wide-Receiver-Breakout-Predictive-Model/master/WR_Rookies.csv") %>% 
   mutate_if(is.character, as.factor)
          
 dim(fb)
@@ -51,18 +66,22 @@ dim(rookies)
 ```
 
 
-# Dealing with Nulls - Christian Thieme (high level)
+## Findind What was Lost - Dealing with Missing Values  
 
-#Analysis - selection criteria for columns included in the model (high level) - Chris Thieme (Chris Dalton - based on your research what to do look for)
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/homeward.jpg)
 
-
-## add some charts - Christian
-
-
-# Feature selection and creation - actual # of columns used as well as the creation of the opportunity score
-
+The single most challenging aspect of this project was determining the appropriate way to deal with the missing values in the data. With ~600 columns, it was difficult to determine which columns should be left blank and which should be imputed. Below is an extremely small random sample of columns showing just how pervasive the issue of missing data was (the number below the column names is total null values within the column:
 
 ```{r}
+null_cols <- colSums(is.na(fb))
+null_cols[null_cols >350 & null_cols < 375]
+```
+
+After whittling the column set down to 435, we painstakingly went through each column to determine if a missing field in a column was appropriate (no data for receiving yards at age 22 because the player had been drafted at 19) or if it should be imputed (a metric that was missing from the combine, such as combine 40 time) because a value should be there. Once that determination had been made for each column, we had to decide the best method for imputation. We dabbled with using the mean, median, or mode of each column with varying degrees of accuracy improvments, but saw the largest gain when we switched to imputing these missing values with KNN clustering. 
+
+To put it simply, KNN clustering is a technique that imputes missing values based on rows with similar data points that are not missing the value. In this context, this makes sense. If a player is missing a 40 time, but has a similar height, weight, BMI, and vertical to other players that do have 40 times, it makes sense that the player with the missing time may also have a similar 40 time that we could use from the other player's rows. Thus, it makes more sense to impute these values with KNN as opposed to using the mean, median, or mode from the column.
+
+```{r include = FALSE}
 ffb <- fb %>% 
   select('Player','Team', 'DraftYear','School', 'Conference', 'DR', 'DP', 'DraftAge',  'BreakoutAge_WRBOA_twentypercent','BreakoutAge_WRBOA_thirtypercent','TotalCareer_REC', 'GamesPlayed_18','GamesPlayed_19','GamesPlayed_20', 'GamesPlayed_21', 'GamesPlayed_22',  "RushATTs_18" ,                         
  "RushATTs_19",                           "RushATTs_20" ,                         "RushATTs_21",                          
@@ -231,7 +250,109 @@ wr_rookies <- rookies %>%
 ```
 
 
-```{r}
+## Analysis - What Attributes Are Predictive of a Breakout WR?
+
+With so many available attributes of data, we spent a significant amount of time doing analysis trying to determine what the most predictive factors are for breakout wide receivers. While it would be impossible to include the entire analysis in this file because of its expanse, the following themes emerged as we performed our analysis. 
+
+<br>
+
+#### Draft Pick is King
+
+This one seems like a no brainer and lends to the fact that teams do a tremendous amount of research before drafting a player, but draft pick by far is the most predictive attribute in the data. Players who are drafted earlier breakout far more often than those who are drafted later. 
+
+```{r echo = FALSE}
+ggplot(ffb) +
+  aes(x = b_o , y = dp) + 
+  geom_boxplot() +
+  labs(title = "Draft Pick as a Predictor of WR Breakout") + 
+  xlab("") +
+  ylab("Draft Pick") + 
+  theme(
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.40)
+  ) 
+```
+
+Looking at the boxplots above, we can clearly see that wide receivers that breakout are most often taken earlier in the draft compared to those who do not breakout. 
+
+<br>
+
+
+#### Draft Age
+
+Frequently, NFL draft prospects leave college and declare for the draft once they have established themselves as draft worthy prospects. To be considered a draft worthy prospect, you likely have to have demonstrated one or both of production (stats) or potential (upside). 
+
+Historically and statistically speaking, the earlier a player is able to do that, they are more likely to be productive and successful pros. If we think through this logically, there are likely some simple reasons for that. The first that comes to mind is physical maturity. 
+
+Players enter college at the age of 18 and for the most part are still growing into their bodies. Over the next several years in college they continue to develop and grow. For the first time they are likely getting access to certified trainers and nutritionists to help accelerate that growth. Players who are successful earlier, likely entered college with superior physical gifts compared to their cohorts. So, it makes sense that when they have access to the same aforementioned programs, they offer a higher theoretical physical ceiling. The same concept is true on another level once entering the NFL.
+
+Upon becoming a pro, their entire life should be centered around the game of football. Even better physical training and nutrition programs are implemented and players should continue to develop.  It again makes sense that if they were ahead as they entered college, they should continue to be ahead and progress upon entering the NFL. These same principles can be applied to the mental side of football.
+
+Players who are successful at an early age in college likely have the mental capacity for the playbook, concepts, and/or schemes. Coaches do not play players who can't remember plays and execute assignments. With that said, college football playbooks have notoriously been simplified compared to their NFL counterparts. At the scouting combine, most players are interviewed and quizzed on schemes, concepts, as well as take the Wonderlic Cognitive Ability test. 
+s
+While the relevance of Wonderlic is debated, if players interview and score well, it would intuitively make sense that the team feels comfortable that they would pick up the requisite knowledge of their position and then put them on the field to complete their assignments. This is especially true at a young age, as in theory you should only continue to gain knowledge as you mature. As has been frequently demonstrated, if you're a smart teenager, you'll likely be a smart adult. 
+
+In summary, if a player is superior to their competition in college, they are more likely to be superior to their competition in the NFL. This is especially true the younger a player is, given that they are likely starting further ahead mentally and physically than their peers. 
+
+
+```{r echo = FALSE}
+ggplot(ffb) +
+  aes(x = b_o, y = draft_age) + 
+  geom_boxplot() +
+  labs(title = "draft pick") + 
+  labs(title = "Draft Age as a Predictor of WR Breakout") + 
+  xlab("") +
+  ylab("Draft Age") + 
+  theme(
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.40)
+  ) 
+```
+
+The boxplots above show what intuitively makes sense; players who do well early in their college career and are drafted at a younger age, breakout more frequently than those who are drafted at an older age.
+
+<br>
+
+#### Career Average Stats
+
+This metric normalizes average receiving yards while accounting for passing game volume differences. To elaborate, you have some teams that average 55 pass attempts per game while the college average is likely much closer to 30. This metric helps account for this nearly 60% difference in pass attempts.
+
+For a simple example, let's look at Player A and Player B. Player A may look impressive if he averages 100 receiving yards per game compared to Player B who averages 75 receiving yards. However, if Player A's team passed for the previously mentioned 55 pass attempts while Player B's only passed the ball 30 times; we get a receiving yards per team pass attempt metric of 1.8 for Player A and 2.3 for Player B.
+
+Once pass attempts were factored in, Player B has additional context that could prove he was the better prospect. While it's not a perfect indicator, we can see in the visual below that Player B would likely be a more probable breakout candidate. Player B did essentially more on a per play basis, and thus this makes logical sense.
+
+Doing more with less is always a good sign. From the top 25 metrics we see a lot of them involve market share or per pass attempt stats. These again normalize the variance in opportunities or attempts players may see compared to one another. They also help compare individual player performance to the rest of their teams. These are commonly used concepts in finance/economics, but we will dig into them a bit more now. I've already talked about the concept of per team pass attempt, so while the concept is similar with market share, I'll elaborate further on that now. 
+
+One of the most simple ways I've seen to describe market share is to think of a particular team's stat as a pie; yes, that kind of pie. For this example, we'll talk about a team's total receptions. So if a team has 300 receptions in the year, this represents the whole team's "pie". Now imagine a player C has a total reception count of 100, and Player D has a count of 50 receptions. As a result, we would say that Player C would have a market share of about 33% while Player D would be at about roughly 17%. This is a very simple example as the players on the are on the same team, but let's show where it truly comes in handy. 
+
+We'll leave Player C at 100 receptions of a total of 300 for his team. However, let's now change player D to 100 receptions with a team total of 400. As we can now clearly see, while at first glance they are equal on receptions, Player C is more impressive due to commanding a bigger piece of the team pie at 33% compared to 25%. 
+
+From the visual below, we can see that players who consistently commanded a larger piece of their team's pie and did more on a per play/attempt basis not surprisingly had a better chance to breakout. This also proves that giving proper context to raw volume stats can prove quite valuable. 
+
+
+```{r echo= FALSE, fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+ggplot(ffb) +
+  aes(x = ppg  , y = career_average_rec_yards_tmpa, color = ppg) + 
+  geom_jitter() +
+  geom_smooth(method = lm, se = FALSE, color = "red") +
+  labs(title = "Career AVG Rec Yards Per Team Pass Attempt vs. Points Per Game") + 
+  xlab("PPG") +
+  ylab("Career AVG Receiving Yards (per TMPA)") + 
+  theme(
+    legend.position = "none",
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.40)
+   
+  )
+
+```
+
+While the relationship between this variable and points per game in the NFL is loose at best, there is still a relationship that can be seen and utilized by the model. With dozens of career average stats sliced in different ways, the combination of these statistics hold enough signal to tell a story about who is most likely to break out. 
+
+```{r include = FALSE}
 ffb <- ffb %>% mutate(
   Team_Next_Year = paste(team, draft_year, sep = '-')
   ) 
@@ -242,14 +363,38 @@ wr_rookies <- wr_rookies %>% mutate(
 
 ```
 
+## Feature Engineering - The Secret Sauce
 
-# Opportunity 
-# - Chris - Domain knowledge behind opportunity
-# - Christian Thieme - The scraping
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/bob1.jpg)
 
-# The Scraper
+After doing some extensive data cleaning and analysis to determine variables holding predictive power, we ran an initial model to get a baseline metric that we could measure against as we started feature engineering. The results from the initial model are shown below:
 
-```{r}
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/initial_model_run.jpg)
+
+The contingency table above shows the actual breakout vs non-breakout values against the values as predicted by the model. The values in the main diagnonal (left to right) tell us how accurate our model is at predicting both breakouts and non-breakouts. The first value tells us that the model accurately predicted 3 of the breakouts over the training dataset out of 13 ( 3 + 10 ), so not great. Looking at the second entry from the diagonal, the model correctly identified 66 of the 67 non-breakout players, which is incredibly accurate. Looking at accuracy in aggregate can be deceptive. On the aggregate, our overall model is fairly accurate, because we are correctly predicting the right class for most entries, however, in a model like this where our goal is to predict who will breakout, this model is unusable since we only found a breakout 23% of the time. With the current model, we'd almost be as accurate just by saying that every player would not be a breakout. 
+
+From this intial run and several additional iterations, we indentified several changes we needed to make. First, the distribution between breakouts and non-breakouts is incredibly unbalanced in the data. With so few breakouts in the training dataset, it becomes difficult for the model to effectilvely train on what a breakout looks like. This would need to be solved (more on this later). Second, there wasn't enough signal in our variables alone to create an accurate predictive model, so we'd have to do some feature engineering to find more signal for the model. Enter opportunity...
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/great_moments.jpg)
+
+
+## Opportunity 
+ 
+Many in the fantasy football industry have claimed that opportunity for playing time is the single most important factor in determining how successful a player will be. In order to be a successful fantasy football player, you need to score a certain number of fantasy points. It’s understandably difficult to score fantasy points if you aren’t on the field; regardless of how “good” a prospect is. Unfortunately, opportunity is also one of, if not the most difficult to quantify. 
+
+Most often players who are drafted highly (first or second round) go to teams that have ample opportunity at their position. As you might expect, a team that has a crowded depth chart at wide receiver typically will not spend an early valuable pick on a wide receiver. Conversely, it’s logical that if a team is in desperate need of a wide receiver to help give the offense a boost, they likely will utilize an early pick on a player to help fill that void. 
+
+With all that said, how do you quantify “opportunity”? For this specific model analyzing wide receivers, we attempted to do so based on the team’s leading receiver’s receiving yards from the year prior to the rookie being drafted. Based on my knowledge and accepted standards of what constitutes a “good season", we set yardage thresholds that would determine the opportunity score. For example, if a player was drafted to a team where the year prior a player had over 1465 receiving yards, they would be given an opportunity score of 1. If the player went to a team where the leading receiver the year prior had less than 657 yards, they would be assigned an opportunity score of 5. The higher the score, the more opportunity. Overall, this methodology should work to give a tangible value to opportunity. However, there are a few shortcomings. 
+
+A team could have had their star receiver hurt the year before the rookie was drafted, which could give an inflated opportunity score. The star receiver would likely then return the following year and the market share of available yards would then decrease more than we first assessed. Also, you could have the scenario where a great receiver was in a contract year (last year of their contract) on a certain team, had a great year, but then was either signed by a new team the following year or traded. So the opportunity score would then be low for the incoming rookie, when in reality there is more opportunity available as the veteran receiver has moved on. These are just a couple of examples, but again on the whole our quantification of opportunity into a “score” proved more helpful than hurtful in training the model. 
+
+Another added positive to assessing the opportunity score, is that it is easily reproducible for future years. Manually capturing this data, for all 32 NFL teams with multiple players from each team, would have been a very time consuming and tedious task each year. Instead, we opted to build a web scraper to do the work for us. 
+ 
+## Scraping Opportunity
+
+Scraping the opportunity data as well as how we broke players into different opportunity categories is essentially our "secret sauce", so the full code for this won't be shared here. 
+
+```{r include = FALSE}
 scraper_func <- function(base_url, team, year, ending) {
   
   build_url <- paste0(base_url, team, "/", year, ending)
@@ -294,6 +439,7 @@ scraper_func <- function(base_url, team, year, ending) {
 }
 ```
 
+The code below shows how we utilize the scraper. We loop through each team for each year that we are interested in and aggreate the results into a single dataframe that we then use to join to our dataset. 
 
 ```{r}
 wr_df <- data.frame()
@@ -309,11 +455,11 @@ for (team in teams){
   }
 }
 
-wr_df
+head(wr_df)
 ```
 
 
-```{r}
+```{r include = FALSE, echo = FALSE}
 ggplot(wr_df) + 
   aes(x = Receiving_Yds) + 
   geom_histogram(bins = 200) + 
@@ -324,23 +470,26 @@ ggplot(wr_df) +
 ```
 
 
-
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include = FALSE, echo = FALSE}
 opp <- wr_df %>%
   select(Team_Next_Year, Opportunity)
 
 ```
 
 
-```{r}
+```{r include = FALSE, echo = FALSE}
 ffb <- ffb %>% left_join(opp, by = "Team_Next_Year")
 
 wr_rookies <- wr_rookies %>% left_join(opp, by = "Team_Next_Year")
 ```
 
-#Model and logic - Christian 
 
-```{r}
+```{r include = FALSE, echo = FALSE}
+names(ffb)
+```
+
+
+```{r include = FALSE, echo = FALSE}
 ffb <- ffb %>%   
   filter(dr != 10) %>%
   filter(ppg != 0) %>% 
@@ -350,8 +499,37 @@ wr_rookies <- wr_rookies %>%
   filter(dr != 10) 
 ```
 
+```{r echo = FALSE}
+ffb %>% 
+  drop_na(Opportunity) %>%
+ggplot() +
+  aes(x = as.factor(Opportunity), y = ppg) + 
+  geom_boxplot() +
+  labs(title = "Opportunity as a Predictor of WR Breakout") + 
+  xlab("Opportunity") +
+  ylab("PPG") + 
+  theme(
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.40)
+  )
+```
 
-```{r}
+As you can see from the above boxplots, while there isn't a significant difference in opportunity scores 1-4, there is a significant amount of signal captured when a player has a score of 5. This additional signal is what we needed to take our model to the next level. 
+
+With the addition of opportunity, as well as correcting for the imbalance between breakouts and non-breakouts and some additional tuning, we were able to see some significant performance gains in the training model: 
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/finaltrainingmodeloutput.jpg)
+
+While we did see an increase in non-breakouts that were classified as breakouts, upon review these "missclassified" players were right on the cusp between being a breakout and a non-breakout, so we felt the model was overall correct in its characterization and direction. 
+
+## One Model to Rule them All
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/onemodel.jpg)
+
+Because this paper will reach a large audience of individuals without technical backgrounds, we’ve decided not to include the entire code base for every data transformation before running the model. However, we will include those that are critical to the success of the model. 
+
+```{r include = FALSE}
 ffb <- ffb %>% 
   mutate(
   
@@ -370,7 +548,7 @@ wr_rookies <- wr_rookies %>%
 
 
 
-```{r}
+```{r include = FALSE}
 ffb[is.na(ffb)] <- 0
 
 wr_rookies[is.na(wr_rookies)] <- 0
@@ -378,13 +556,13 @@ wr_rookies[is.na(wr_rookies)] <- 0
 ```
 
 
-```{r}
+```{r include = FALSE}
 ffb <- drop_na(ffb) %>% 
   filter(team != 'bum')
 dim(ffb)
 ```
 
-# Dealing with NA's
+In order to utilize the KNN classifier to impute our missing values in the dataset, we needed change any zeros in the columns below to NA's, so that they would be included in the classification. 
 
 ```{r}
 ffb <- ffb %>%
@@ -415,13 +593,10 @@ wr_rookies <- wr_rookies %>%
          combine_ha_ss = ifelse(combine_ha_ss == 0, NA, combine_ha_ss)
          )
 
-
-
 ```
 
 
-
-```{r}
+```{r include = FALSE}
 cols <-names(ffb)
 col_names <- trimws(cols)
  # make.names(names(fb1))
@@ -434,6 +609,7 @@ col_names1[make.names(cols1) != col_names1]
 
 ```
 
+Next, we remove the unneeded variables. 
 
 ```{r}
 ffb <- ffb %>% select(-ppg, -team, -draft_year, -Team_Next_Year)
@@ -441,13 +617,18 @@ wr_rookies <- wr_rookies %>% select(-team, -draft_year, -Team_Next_Year)
 ```
 
 
+For this model, we chose to imlpement the random forest algorithm. We chose this algorithm simply for it's ease of use and the ability to understand what the alogrithm is doing to derive the predictions. As we'll describe at the end of the article, next steps for this project will include experimenting with alternate models (xgboost, etc.).
+
 ```{r}
 cores <- parallel::detectCores()
 cores
 ```
 
+Setting the importance = `impurity` will allow us to see which variables were most important to the model after the model has finished running. We selected the below arguments as part of our tuning process on the training dataset. 
 
 ```{r}
+set.seed(123)
+
 rf_mod <- 
   rand_forest(mtry = 28, 
               min_n = 32, 
@@ -457,6 +638,16 @@ rf_mod <-
 
 rf_mod
 ```
+
+Next we take advantage of `tidymodels` ability to create a recipe. The recipe will apply many of the necessary changes to the data before the model is run. Here we:
+
+* create dummy variables - necessary for categorical variables
+* remove columns with a single variable - not a significant source of signal
+* normalize the data 
+* impute nulls in the dataset using KNN 
+* up-sample 
+
+Up-sampling is one method for solving issues with unbalanced datasets. It essentially makes additional rows for the category with a lower percentage to create an even distribution between the categories. 
 
 ```{r}
 rf_recipe <- 
@@ -483,26 +674,162 @@ wr_fit <- rf_workflow %>%
 ```
 
 
+Using the workflow and recipe we built, we also fit the model to our data. Now, it's time to use our fit model to make predictions. We'll specify the argument "type" here to be "prob" which will allow us to view the associated probability with each prediction. 
+
 ```{r message=FALSE, warning=FALSE}
 wr_predictions <- predict(wr_fit, wr_rookies, type = "prob") %>%
   bind_cols(wr_rookies %>% select(player))
 ```
 
+<br>
 
-#Top 50 - Chris Dalton
+## Which Wide Receivers Will Break Out?
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/now.jpg)
+
+Below is the output for the model showing the top 25 players with the highest probabilities to breakout: 
 
 ```{r}
-top_25 <- wr_predictions %>% select(player, .pred_Breakout, `.pred_No Breakout`) %>% 
-  arrange(desc(.pred_Breakout)) %>% top_n(50, wt = .pred_Breakout)
+top_25 <- wr_predictions %>% 
+  arrange(desc(.pred_Breakout)) %>%
+  top_n(25,.pred_Breakout)
 ```
 
 
-```{r fig.height=8, fig.width=10}
+```{r fig.height=8, fig.width=12}
 ggplot(top_25) +
-  aes(x = reorder(player, .pred_Breakout), y = .pred_Breakout) + 
+  aes(x = reorder(player, .pred_Breakout), y = .pred_Breakout, fill = .pred_Breakout) + 
   geom_col() +
   geom_text(aes(label = round(.pred_Breakout,2)), hjust = -.2) +
-  coord_flip()
+  scale_fill_gradient2(low = "lightblue",
+                       mid = "skyblue2",
+                       high = muted("blue4"),
+                       midpoint = .25)  +
+  labs(title = "Probability of Rookie Wide Receiver to Breakout") +
+  xlab("Player") +
+  ylab("Probability") +
+  coord_flip() + 
+   theme(
+    legend.position = "none",
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.40)
+   
+  )
 ```
 
-# Conclusion
+*I’ll start by answering what you might be thinking already regarding the timing of this publishing. This model has been done since about mid-August. The write up (hence why the publish date is about a month and a half later) was not. So, while the model and predictions have not changed, we do have some preliminary knowledge (4 weeks – very very small sample compared to the breakout criteria window of 3 seasons) to measure against the predictions. And yes, I know it’s far too early for victory laps both positive and negative.* 
+
+From the list above, we can see there are 14 different rookie wide receivers that meet our breakout prediction threshold of 0.30. Of those 14, there are only a few surprises that I’ll get into here shortly. Why 0.30? In analyzing the results from our training runs, we noted more often than not, players that broke out tended to have a probability of breakout greater than or equal to 0.30, so we adjusted away from the typical 0.50 to more accurately capture players with breakout potential.
+
+To me, I was not shocked that CeeDee Lamb was head and shoulders above the rest of the field. He has the draft capital, the college production, and solid athleticism. I’ve been a fan going back to his freshman year watching him play with Baker Mayfield. I initially thought his landing spot was less than ideal given the competition for targets with Amari Cooper and Michael Gallup, but apparently the model was less concerned. Through the early part of the season (I think the terrible Dallas defense has helped), he’s looking fantastic. 
+
+As I mentioned there were only a few surprises above the breakout threshold. Namely Isaiah Hodgins, Gabriel Davis, Tyler Johnson, and Antonio Gandy-Golden. These players all have a few things in common. Despite all being drafted in the 6th, 4th, 5th, and 4th rounds respectively, they all are big bodied (all 6’2-6’4 200 lbs +) guys who put up great college numbers. As we later dig into the most predictive factors in the model, we can see that this falls in line with its findings. 
+
+Along with a myriad of market and age adjusted stats, we see combine BMI as a top 25 predictor and maybe most notably, the only physical measurement-based predictor. Regardless of what you think of BMI itself and despite their height (which can sometimes skew BMI), three of these four receivers measure in with an above average BMI. Only Isaiah Hodgins was below. 
+
+What can take away from this? Well, it makes me believe that when in doubt, lean towards the late round receiver who has a higher BMI combined with great college production. Is it a lot to go on? No, but hopefully it will help break some ties, or provide direction in late rounds of rookie drafts when it’s just a crapshoot. 
+
+Another observation involves Chase Claypool and Michael Pittman. Both of these big bodied receivers were taken in the 2nd round. More than two rounds above the previous four I mentioned. However, they both scored much worse. In the case of Claypool, a physical freak, we can most likely attribute his poor score to his poor age adjusted metrics. Somewhat of a late bloomer (breakout age of 21.2), he did not score highly in the models most predictive receiving factors as most involved age 19-20 production. The story on Pittman is essentially the same. Not only did he not breakout until age 21 (20.9), the market adjusted statistics were below Claypool’s. Neither were bad in this regard, but clearly the model didn’t see enough out of them in other areas to offset these shortcomings of later age production.
+
+Another call out, is Brandon Aiyuk. He’s a bit of an interesting case being a Juco transfer who did well at a young age (albeit against far worst competition) before fighting for targets against top 2019 WR prospect N’Keal Harry at ASU and then finally shining in his final year. I highlight him not only due to his non-traditional background, but also because he also is the rare type of receiver that gets rushing work as well. Laviska Shenault is also in this category.
+
+25% of their way through their rookie seasons, we see Aiyuk and Shenault in the top 6 for fantasy points scored so far (table below). With that said, Shenault (9 carries – 53 yards = 16% of total fantasy points) and even more so Aiyuk (4 carries – 69 yards – 2 TDs = 50% of total fantasy points) have gotten a good boost from their rushing stats.
+
+I highlight this not to take anything away from their “versatility”, but rather that it’s quite a unique thing and as you’d imagine, very hard to quantify and predict the rushing workload a wide receiver will get. With that said, it may bring up another takeaway contrary to the models' findings. 
+
+If a receiver has a history of notable rushing statistics in college, it may provide an exception to a poor score in the model. I still would bet on those types of players to be the exception vs the rule once they get to the NFL (how many top 25 WR in the league right now consistently gets rushing attempts?), but again it may provide some context behind the exceptions in the results below. 
+
+Receiving stats for the top 25 receivers through four weeks of the regular season:
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/3weeks.jpg)
+
+Highlighted in green, Gabriel Davis is looking good, especially considering the low volume. He was someone the model was a bit higher on compared to the NFL draft/community. Both Claypool and Pittman are trying hard to prove the model wrong, given it was bit lower on them (highlighted in red).
+
+As we can see, even with just a few weeks down (still roughly 2.75 seasons to go to confirm) the results pretty much follow the chalk. I’d most likely attribute this to draft capital, which again goes back to opportunity. Of those in the top 15, just 4 were drafted later than round 3. In other words, 73% of the players in the top 15 were drafted in the first three rounds. 
+
+I’m already looking forward to the end of the year to see how things end up, but I think we can already see the importance of draft capital. Looking back historically, we can see those who were drafted earlier most often got the requisite opportunity they needed to "breakout". This is visible below in the results when we ran the model over the training data set (Note: in our training we used an 80/20 holdout approach; meaning 20% of the data is being held from the initial model training data set and then is used as the testing set, so that validation can be performed to measure the accuracy of the trained model). 
+
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/trainingmodel_run.jpg)
+
+From the training (historical) data set, we get a little bit better feel given larger sample size (seasons played). 
+
+Headlining the training data results are Michael Clayton, Michael Jenkins and DJ Moore. Clayton had a brilliant rookie year (technically still a breakout), and then appears to have been constantly injured or dinged up the remainder of his career (never played a full season outside his rookie year). Michael Jenkins unfortunately looks like a straight up bust. He was a great college player, but for circumstances that I can’t easily discern, he appears to just have never developed into more than a role player. DJ Moore on the other hand, is a bit easier to analyze. 
+
+DJ Moore had a good rookie year, but undoubtedly broke out last year in just his 2nd year in the league. Despite playing with a mix of hobbled Cam Newton, Kyle Allen, and Will Grier, he totaled 87 receptions (15th in the league) for 1175 yards (9th in the league). He is still a very highly regarded dynasty asset as he is still just 23 years old. 
+
+I won’t get into the rest, but from the list above and using our 0.30 threshold, we can see that there are a good number of fantasy relevant players. Most recently and to name a few that most should easily recognize: DJ Moore, Eric Decker, Sammy Watkins, Anquan Boldin, Emmanuel Sanders, DeSean Jackson, Randall Cobb, Golden Tate, Juju Smith-Schuster, and a personal favorite, DK Metcalf (#GoHawks). 
+
+I think potentially the most important take away, is that even those that may be viewed as average or below average overall (Michael Clayton, Michael Floyd, Mario Manningham etc.) still technically broke out with at least a single season of fantasy relevance. The model still was accurate in predicting who would “breakout”, even if it was just for a single season. 
+
+
+## Most predictive factors: 
+
+Below you will see the top 25 most important factors to the model: 
+
+```{r fig.height=6, fig.width=10, message=FALSE, warning=FALSE}
+wr_fit %>% 
+    pull_workflow_fit() %>% 
+  vip(num_features = 25, color = "blue", fill = 'lightblue') +
+  labs(title = "Top 25 Most Predictive Factors") + 
+   theme(
+    legend.position = "none",
+     axis.ticks.y = element_blank(),
+    axis.ticks.x = element_blank(),
+     plot.title = element_text(hjust = 0.35)
+   
+  )
+```
+
+Of all factors that predict a prospects chances of a breakout, there are two that far exceed the others; draft pick and draft round. As discussed previously, this is most likely due to the opportunity that earlier picks are given compared to their late(r) round teammates. The earlier a pick is, the bigger investment it represents for the team. It is then logical that the team would give these players more of an opportunity. You wouldn't don't spend significant capital on something only to not use it right? Right, unless you’re the Green Bay Packers that is... (for all those who missed the joke, please type “Jordan Love  Draft” into Google and click on one of the many articles). 
+
+Other industry experts have also come to the same conclusion, so it was good to see the model identify these two factors. Some might ask why draft pick is more predictive than draft round. I think this is mainly due to the level of specificity that draft pick provides over draft round. Within each round there are usually 32 picks (excluding compensatory picks). As you can imagine, out of the roughly 250 players chosen each year, shifting back in a single round could mean quite a change in the type and quality of available players. 
+
+Players drafted at the start of the 1st round for example, are usually seen as foundational type players for teams. They are supposed to be the “can’t miss” picks and future superstars. Those drafted at the end of the 1st are typically still very good players, but are usually more seen as risky (potentially injured) projects with “big upside” or those who again are very good, but may have already hit their ceiling as players and don’t offer the same “superstar” potential as the earlier round players; hence being drafted later. As you can imagine, teams aren’t infallible. I’d say they get it right the majority of the time, but across the NFL I’d say that’s more like a 60/40 type split between success/failure. This is why draft pick likely leads the model in predictiveness. 
+
+Being able to assign an individual value to each player, especially those in the same round, really aids in helping determining outcomes due to the variations in players within that same round. Again, it’s not exact, but does make sense. A good example is the first round of the 2015 NFL draft. Receiver Amari Cooper was drafted with the 4th overall pick in the draft. Neslon Agholor, Breshad Perriman, and Phillip Dorsett were drafted 20th, 26th, and 29th respectively. 
+
+
+* Amari Cooper’s career stats:
+  + Receptions: 382
+  + Receiving Yards: 5,364
+  + Receiving TDs: 33
+
+* Agholor + Perriman + Dorsett:
+  + Receptions: 443
+  + Receiving Yards: 5,710
+  + Receiving TDs: 40
+
+As we can easily see, Cooper nearly eclipses all of three of the other players stats by himself. Were there other factors at play that determined these outcomes? Of course, but without draft pick being included, these would all just be labeled as “1st round receivers”. That additional detail (draft pick) gives much needed context.  
+
+# Conclusion and Next Steps
+
+To wrap up this analysis, I want to emphasize one main takeaway. That takeaway, is that as much as I wanted the result of this project to make it abundantly clear who I should draft in my fantasy leagues, and have that info easily available by doing more than something like this:
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/easy.jpg)
+
+The reality is that this is just one piece of the puzzle. The process of figuring out who to draft to provide my team with the most scoring potential is still likely going to look similar to this:
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/hard.jpg)
+
+Now, with that all said, I think this will significantly simplify and filter out some external noise each year. Using the information from the model, I can much more easily determine which WR prospects I should be focusing on. Statistically speaking, that old (relative to peers) 4-6th  round receiver who put up mediocre numbers is likely to fail 9.9/10 times. Instead of chasing the outlier and trying to outsmart the NFL team scouts, the model, and likely the majority of the fantasy community, I should likely be pivoting to drafting other positions, trading away the pick for an established veteran, trading back into the following year’s draft to pick up additional picks etc. 
+
+Another point I’d like to discuss briefly is one I mentioned previously; the NFL still gets player evaluation wrong almost as much as they get it right. Every team is looking the “holy grail” when it comes to figure out how to evaluate players. 
+
+![](C:/Users/chris/OneDrive/Personal R Projects/FantasyFootballModel/holy.jpg)
+
+I’d wager billions of dollars and millions of man hours have been spent since the inception of the league to try and determine the players that will be successful. It turns out that analyzing thousands of factors across unique subjects to accurately and repeatedly predict success is really, really, really, hard. Some teams are better than others, but everybody still has their misses and that’s ok. 
+
+I’d argue most of the fun with fantasy football is that we are the general managers, coaches, and talent evaluators for our team. Creating this new tool to help aid in those decisions for one pos
+ition was challenging, but very rewarding. Moving forward, I think the hardest part will be that internal battle that most fantasy players have; do I go with what the numbers say? Or do I trust my instinct and go with my gut? Time will tell, but I’m looking forward to seeing how this year’s draft class pans out and seeing if I have any regrets… Let’s hope not. 
+
+The next steps for this model are to try some other modeling algorithms such as xgboost. Additionally, because of the expanse of columns, implementing principle component analysis (PCA), may also be a factor in helping to remove additional noise from the signal. 
+
+If you’ve made it this far, thanks for reading and please feel free to reach out with any questions. 
+
+#GOHAWKS
+
+
+
+
